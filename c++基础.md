@@ -1,5 +1,278 @@
 
 
+
+
+# 一、指针
+
+## （一）智能指针
+
+### 1.why智能指针
+
+可参考：
+
+https://www.cnblogs.com/5iedu/p/11623757.html
+
+https://docs.microsoft.com/zh-cn/cpp/standard-library/weak-ptr-class?view=msvc-160
+
+### 2.智能指针分类
+
+智能指针一共个有四种 
+
+1. unique_ptr
+
+2. shared_prt
+
+3. weak_prt
+
+4. auto_ptr
+
+    
+
+#### （1）unique_ptr独占型智能指针
+
+##### 1）特点
+
+1. unique_ptr是一个独享所有权的智能指针（指针独占对象），无法进行拷贝构造、赋值操作操作，只能进行移动操作。无法使两个unique_ptr指向同一个对象。
+2. unique_ptr智能指向一个对象，如果当它指向其他对象时，之前所指向的对象会被摧毁。
+3. unique_ptr对象会在它们自身被销毁时使用删除器自动删除它们管理的对象。
+
+##### 2）初始化
+
+1. 直接初始化：unique<T> myPtr(new T);  //ok。但不能通过隐式转换来构造，如unique<T> myPtr = new T()。因为unique_ptr构造函数被声明为explicit。
+
+  2. 移动构造：unique<T> myOtherPtr = std::move(myPtr);但不允许复制构造，如unique<T> myOther = myPtr; 因为unique是个只移动类型。
+
+  3. 通过make_unique构造：unique<T> myPtr = std::make_unique<T>(); //C++14支持的语法。但是make_都不支持添加删除器，或者初始化列表。
+
+  4. 通过reset重置：如std::unique_ptr up; up.reset(new T());
+
+##### 3）指定删除器
+
+1. unique_ptr<T,D>  u1(p,d);删除器是unique_ptr类型的组成部分，可是普通函数指针或lambda表达式。注意，当指定删除器时需要同时指定其类型，即D不可省略。
+2. 使用默认的deleter时，unique_ptr对象和原始指针的大小是一样的。当自定义deleter时，如果deleter是函数指针，则unique_ptr对象的大小为8字节。对于函数对象的deleter，unique_ptr对象的大小依赖于存储状态的多少，无状态的函数对象（如不捕获变量的lambda表达式），其大小为4字节。
+
+##### 4）常用操作
+
+1. get()：返回unique_ptr中保存的裸指针
+2. reset()：重置unique_ptr。
+
+3. release()：放弃对指针的控制权，返回裸指针，并将unique_ptr自身置空。通常用来初始化另一个智能指针。
+
+4. swap(q)：交换两个智能指针所指向的对象。
+
+##### 5）示例代码
+
+```c++
+class Widget{
+
+};
+
+int main(){
+   
+    std::unique_ptr<Widget> upw1;
+
+    upw1.reset(new Widget);
+
+    std::unique_ptr<Widget> upw2(new Widget);
+    cout <<"before swap..." << endl;
+    cout << "upw1.get() = " << hex << upw1.get() << endl;
+    cout << "upw2.get() = " << hex << upw2.get() << endl;
+
+    cout << "after swap..." << endl;
+    upw1.swap(upw2); //交换指针所指的对象
+    cout << "upw1.get() = " << hex << upw1.get() << endl;
+    cout << "upw2.get() = " << hex << upw2.get() << endl;
+
+    cout << "remove upw2 controller..." << endl;
+    upw1.reset(upw2.release()); //转移所有权
+
+    cout << "upw1.get() = " << hex << upw1.get() << endl;
+    cout << "upw2.get() = " << hex << upw2.get() << endl;
+
+    cout <<"delete upw1..." << endl;
+    upw1 = nullptr; //释放upw1指向的对象，并将upw1置空
+    upw1.reset(nullptr);
+    cout << "upw1.get() = " << hex << upw1.get() << endl;
+}
+```
+
+#### （2）shared_ptr共享型智能指针
+
+##### 1）剖析shared_ptr
+
+shared_ptr包含两个指针，一个是存储着指向对象的指针，另一个是指向控制块的指针。
+
+因此，shared_ptr大致的内存模型如下：
+
+![img](c++基础配图/772759-20191004162132006-1659323223.png)
+
+储存着指向对象的指针理解起来较为简单，主要说明一个由std::shared_ptr管理的对象都有一个**控制块**，这个控制块
+
+拥有资源的 `shared_ptr` 对象共享控制块。 控制块包含：
+
+- 拥有该资源的 `shared_ptr` 对象的数目，
+- 指向该资源的 `weak_ptr` 对象的数目；
+- 该资源的删除器（如果有），
+- 控制块的自定义分配器（如果有）。
+
+##### 2）特点
+
+1. shared_ptr是一个共享所有权的智能指针（多指针共享一个对象），可以拷贝构造、赋值操作操作，存在一个引用计数用于记录当前还有多少指针指向该对象。
+
+    
+
+##### 3）初始化
+
+- 直接初始化：
+
+```c++
+shared_ptr<T> sp;
+sp.reset(new T());
+
+shared_ptr<T> sp(new T());
+```
+
+- 拷贝构造：
+
+```c++
+shared_ptr<T> sp1 = sp; //拷贝构造
+```
+
+- 通过make_shared构造
+
+```c+
+auto sp = make_shared<int>(10);
+```
+
+##### 4）指定删除器
+
+1.  shared_ptr<T> sp1(q, deleter1);与unique_ptr不同，**删除器不是shared_ptr类型的组成部分**。假设，shared_ptr<T> sp2(q,deleter2)，尽管sp1和sp2有着不同的删除器，但两者的类型是一致的，都可以被放入vector<shared_ptr<T>>类型的同一容器里。
+2.  与std::unique_ptr不同，自定义删除器不会改变std::shared_ptr的大小。**其始终是祼指针大小的两倍**。
+3.  当使用shared_ptr**管理动态数组**时，需要指定删除器。因为默认删除器不支持数组对象。如shared_ptr<int> sp(new int[10], std::default_delete<**int[]**>);
+4.  删除器可以是普通函数、函数对象和lambda表达式等。默认的删除器为std::default_delete，其内部是通过delete来实现功能的。
+
+##### 5）示例代码
+
+```c++
+int main(){
+		int a = 10;
+    std::shared_ptr<int> ptra = std::make_shared<int>(a);
+    std::shared_ptr<int> ptra2(ptra); //copy
+    std::cout << ptra.use_count() << std::endl;
+    std::cout << ptra2.use_count() << std::endl;
+    std::cout << ptra.get() << std::endl;
+    std::cout << ptra2.get() << std::endl;
+
+    int b = 20;
+    int *pb = &a;
+    //std::shared_ptr<int> ptrb = pb;  //error
+    std::shared_ptr<int> ptrb = std::make_shared<int>(b);
+    std::cout << ptra.use_count() << std::endl;
+
+    ptra2 = ptrb; //assign ptra use_count变为1
+    ptrb.get(); //获取原始指针
+
+    std::cout << ptra.use_count() << std::endl;
+    std::cout << ptrb.use_count() << std::endl;
+    std::cout << ptra2.use_count() << std::endl;
+}
+```
+
+
+
+
+
+
+
+#### （3）weak_ptr弱类型型智能指针
+
+##### 1）剖析weak_ptr
+
+weak_ptr是弱智能指针对象，它不控制所指向对象生存期的智能指针，它指向由一个shared_ptr管理的智能指针。
+
+将一个weak_ptr绑定到一个shared_ptr对象，不会改变shared_ptr的引用计数。一旦最后一个所指向对象的shared_ptr被销毁，所指向的对象就会被释放，即使此时有weak_ptr指向该对象，所指向的对象依然被释放。
+
+![image-20210303213903291](c++基础配图/image-20210303213903291.png)
+
+##### 2）特点
+
+1. weak_ptr不是独立的智能指针，它是shared_ptr的助手，只是监视shared_ptr管理的资源是否释放，**不会影响强引用计数**，不能管理资源。
+2. weak_ptr**没有重载操作符\*和->**，因为它不共享指针，不能操作资源。
+3. weak_ptr主要**用来代替可能空悬的shared_ptr**。
+
+##### 3）初始化
+
+- 直接初始化：
+
+```c++
+weak_ptr<T> wp(sp); //其中sp为shared_ptr类型
+```
+
+- 赋值初始化
+
+作者：宋大壮
+链接：https://www.jianshu.com/p/234b818f289a
+来源：简书
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
+
+
+
+```c++
+wp1 = sp;  //其中sp为shared_ptr类型
+
+wp2 = wp1; //其中wp1为weak_ptr类型
+```
+
+##### 4)常用操作
+
+1. use_count()：获取当前控制块中资源的强引用计数。
+2. expired()：判断所观测的资源**是否失效**（即己经被释放），即use_count是否为0。
+3. shared_ptr<int> sp1 = wp.**lock()**;//**如果wp失效,则sp为空**（其中wp为weak_ptr类型）
+4. shared_ptr<int> sp2(wp); //**如果wp失效，则抛std::bad_weak_ptr异常**。
+5. lock()：**获取所监视资源的shared_ptr**，如shared_ptr<int> sp = wp.lock(); //wp为weak_ptr类型。
+6. reset()：重置weak_ptr，**影响弱引用计数**。
+
+##### 5)示例代码
+
+```c++
+class Widget{
+
+};
+
+int main(){
+  	auto sp1 = make_shared<Widget>();
+
+    weak_ptr<Widget> wp(sp1);  //通过shared_ptr初始化
+    weak_ptr<Widget> wp1, wp2;
+    cout << wp.use_count() << endl; //1，强引用计数
+
+    auto sp3 = sp1;
+    wp1 = sp1;   //利用shared_ptr来赋值
+    wp2 = wp;    //利用weak_ptr赋值
+
+    cout << wp.use_count() << endl; //2，强引用计数
+    cout << wp2.use_count() << endl; //2，强引用计数
+
+    auto sp2 = wp2.lock(); //sp2为shared_ptr类型
+    cout << wp2.use_count() << endl; //3，强引用计数
+
+    sp1 = nullptr;
+
+    cout << wp2.use_count() << endl; //2，强引用计数
+
+    return 0;
+}
+
+输出
+  1
+  2
+  2
+  3
+  2
+```
+
+
+
 ### 函数重载(overload function)
 
 #### 函数重载的概念：
@@ -251,134 +524,4 @@ int main()
 ## 静态函数
 
 
-
-## 智能指针
-
-### why智能指针
-
-
-
-### 智能指针分类
-
-智能指针一共个有四种 
-
-1. unique_ptr
-
-2. shared_prt
-
-3. weak_prt
-
-4. auto_ptr
-
-   
-
-#### unique_ptr独占型智能指针
-
-##### 特点
-
-1. unique_ptr是一个独享所有权的智能指针（指针独占对象），无法进行拷贝构造、赋值操作操作，只能进行移动操作。无法使两个unique_ptr指向同一个对象。
-2. unique_ptr智能指向一个对象，如果当它指向其他对象时，之前所指向的对象会被摧毁。
-3. unique_ptr对象会在它们自身被销毁时使用删除器自动删除它们管理的对象。
-
-##### 初始化
-
-1. 直接初始化：unique<T> myPtr(new T);  //ok。但不能通过隐式转换来构造，如unique<T> myPtr = new T()。因为unique_ptr构造函数被声明为explicit。
-
-　　2. 移动构造：unique<T> myOtherPtr = std::move(myPtr);但不允许复制构造，如unique<T> myOther = myPtr; 因为unique是个只移动类型。
-
-　　3. 通过make_unique构造：unique<T> myPtr = std::make_unique<T>(); //C++14支持的语法。但是make_都不支持添加删除器，或者初始化列表。
-
-　　4. 通过reset重置：如std::unique_ptr up; up.reset(new T());
-
-##### 指定删除器
-
-1. unique_ptr<T,D>  u1(p,d);删除器是unique_ptr类型的组成部分，可是普通函数指针或lambda表达式。注意，当指定删除器时需要同时指定其类型，即D不可省略。
-2. 使用默认的deleter时，unique_ptr对象和原始指针的大小是一样的。当自定义deleter时，如果deleter是函数指针，则unique_ptr对象的大小为8字节。对于函数对象的deleter，unique_ptr对象的大小依赖于存储状态的多少，无状态的函数对象（如不捕获变量的lambda表达式），其大小为4字节。
-
-##### 常用操作
-
-1. get()：返回unique_ptr中保存的裸指针
-2. reset()：重置unique_ptr。
-
-3. release()：放弃对指针的控制权，返回裸指针，并将unique_ptr自身置空。通常用来初始化另一个智能指针。
-
-4. swap(q)：交换两个智能指针所指向的对象。
-
-##### 示例代码
-
-```c++
-class Widget{
-
-};
-
-int main(){
-   
-    std::unique_ptr<Widget> upw1;
-
-    upw1.reset(new Widget);
-
-    std::unique_ptr<Widget> upw2(new Widget);
-    cout <<"before swap..." << endl;
-    cout << "upw1.get() = " << hex << upw1.get() << endl;
-    cout << "upw2.get() = " << hex << upw2.get() << endl;
-
-    cout << "after swap..." << endl;
-    upw1.swap(upw2); //交换指针所指的对象
-    cout << "upw1.get() = " << hex << upw1.get() << endl;
-    cout << "upw2.get() = " << hex << upw2.get() << endl;
-
-    cout << "remove upw2 controller..." << endl;
-    upw1.reset(upw2.release()); //转移所有权
-
-    cout << "upw1.get() = " << hex << upw1.get() << endl;
-    cout << "upw2.get() = " << hex << upw2.get() << endl;
-
-    cout <<"delete upw1..." << endl;
-    upw1 = nullptr; //释放upw1指向的对象，并将upw1置空
-    upw1.reset(nullptr);
-    cout << "upw1.get() = " << hex << upw1.get() << endl;
-}
-```
-
-#### shared_ptr共享型智能指针
-
-##### shared_ptr
-
-
-
-##### 特点
-
-1. shared_ptr是一个共享所有权的智能指针（多指针共享一个对象），可以拷贝构造、赋值操作操作，存在一个引用计数用于记录当前还有多少指针指向该对象。
-
-   
-
-##### 初始化
-
-- 直接初始化：
-
-```c++
-shared_ptr<T> sp;
-sp.reset(new T());
-
-shared_ptr<T> sp(new T());
-```
-
-- 拷贝构造：
-
-```c++
-shared_ptr<T> sp1 = sp; //拷贝构造
-```
-
-- 通过make_shared构造
-
-```c+
-auto sp = make_shared<int>(10);
-```
-
-##### 指定删除器
-
-1.  shared_ptr<T> sp1(q, deleter1);与unique_ptr不同，**删除器不是shared_ptr类型的组成部分**。假设，shared_ptr<T> sp2(q,deleter2)，尽管sp1和sp2有着不同的删除器，但两者的类型是一致的，都可以被放入vector<shared_ptr<T>>类型的同一容器里。
-2.  与std::unique_ptr不同，自定义删除器不会改变std::shared_ptr的大小。**其始终是祼指针大小的两倍**。
-3.  当使用shared_ptr**管理动态数组**时，需要指定删除器。因为默认删除器不支持数组对象。如shared_ptr<int> sp(new int[10], std::default_delete<**int[]**>);
-4. 删除器可以是普通函数、函数对象和lambda表达式等。默认的删除器为std::default_delete，其内部是通过delete来实现功能的。
 
